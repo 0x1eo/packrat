@@ -1,0 +1,18 @@
+# Build artifacts
+obj/
+packrat
+
+# Test files
+/tmp/packrat_*
+
+# Editor files
+*.swp
+*~
+.vscode/
+.idea/
+
+# Debug
+*.dSYM/
+
+# LaTeX build artifacts
+docs/
