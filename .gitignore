@@ -1,6 +1,7 @@
 # Build artifacts
 obj/
 packrat
+test_sais
 
 # Test files
 /tmp/packrat_*
@@ -16,3 +17,4 @@ packrat
 
 # LaTeX build artifacts
 docs/
+comp/

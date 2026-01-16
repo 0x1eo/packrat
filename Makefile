@@ -1,5 +1,6 @@
 # packrat - Text Compression Tool
 # BWT + MTF + RLE + Huffman pipeline
+# SA-IS suffix array for 32MB solid blocks
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O3 -march=native -I./include
@@ -31,12 +32,13 @@ $(OBJDIR)/main.o: $(SRCDIR)/main.c $(INCDIR)/packrat.h $(INCDIR)/archive.h $(INC
 $(OBJDIR)/packrat.o: $(SRCDIR)/packrat.c $(INCDIR)/packrat.h $(INCDIR)/bwt.h $(INCDIR)/mtf.h $(INCDIR)/rle.h $(INCDIR)/huffman.h
 $(OBJDIR)/archive.o: $(SRCDIR)/archive.c $(INCDIR)/archive.h $(INCDIR)/packrat.h
 $(OBJDIR)/archive_v3.o: $(SRCDIR)/archive_v3.c $(INCDIR)/archive_v3.h $(INCDIR)/packrat.h
-$(OBJDIR)/bwt.o: $(SRCDIR)/bwt.c $(INCDIR)/bwt.h
+$(OBJDIR)/bwt.o: $(SRCDIR)/bwt.c $(INCDIR)/bwt.h $(INCDIR)/sais.h
+$(OBJDIR)/sais.o: $(SRCDIR)/sais.c $(INCDIR)/sais.h
 $(OBJDIR)/mtf.o: $(SRCDIR)/mtf.c $(INCDIR)/mtf.h
 $(OBJDIR)/rle.o: $(SRCDIR)/rle.c $(INCDIR)/rle.h
 $(OBJDIR)/huffman.o: $(SRCDIR)/huffman.c $(INCDIR)/huffman.h
 
-# Math library needed for log2f in entropy calculation
+# Math library needed for log2 in entropy calculation
 # Pthread for parallel compression
 LDFLAGS = -lm -lpthread
 
