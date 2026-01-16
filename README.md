@@ -72,4 +72,4 @@ Solid archives concatenate files by type before compressing. All your `.c` files
 
 ## License
 
-Do whatever you want with it.
+MIT
