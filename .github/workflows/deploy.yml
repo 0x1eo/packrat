@@ -69,8 +69,7 @@ jobs:
       - name: Build with Astro
         run: |
           ${{ steps.detect-package-manager.outputs.runner }} astro build \
-            --site "https://blog.0x1eo.dev" \
-            --base "/packrat"
+            --site "https://blog.0x1eo.dev"
         working-directory: ${{ env.BUILD_PATH }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
