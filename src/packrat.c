@@ -45,10 +45,10 @@ static int prt_compress_internal(const uint8_t *input, size_t input_size,
     uint8_t *huff_out = malloc(input_size * 2);
     
     if (!bwt_out || !mtf_out || !rle_out || !huff_out) {
-        free(bwt_out);
-        free(mtf_out);
-        free(rle_out);
-        free(huff_out);
+        if (bwt_out) free(bwt_out);
+        if (mtf_out) free(mtf_out);
+        if (rle_out) free(rle_out);
+        if (huff_out) free(huff_out);
         return PRT_ERR_MEMORY;
     }
     

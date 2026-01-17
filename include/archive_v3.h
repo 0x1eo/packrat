@@ -9,7 +9,7 @@
 #define PRT_ARCHIVE_MAGIC_V3 "PRT\x03"
 
 #define PRT_MAX_PATH_V3         512
-#define PRT_SOLID_BLOCK_MAX     (1 * 1024 * 1024)
+#define PRT_SOLID_BLOCK_MAX     (4 * 1024 * 1024)
 #define PRT_SOLID_BLOCK_MAX_FILES 1024
 
 #define PRT_METHOD_STORED   0

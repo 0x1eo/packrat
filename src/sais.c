@@ -248,12 +248,23 @@ static void induced_sort_byte(const uint8_t *T, int32_t *SA, size_t n,
         }
     }
     
-    /*
-     * PHASE 2: Induce S-type suffixes (right-to-left scan)
-     * 
-     * For each position SA[i] = j where j > 0:
-     *   If T[j-1..] is S-type, place it at the end of bucket T[j-1]
+    /* Phase 2: Induce S-type suffixes (right-to-left scan) */
+    
+    /* Place the last suffix (n-1) explicitly at the START of its S-region.
+     * n-1 is always S-type and smallest in its bucket, so it belongs at
+     * the left-most S-slot. We must place it before the loop so it's
+     * visible for induction of n-2.
      */
+    {
+        int32_t c = T[n - 1];
+        get_buckets(T, n, K, bucket, 0); /* bucket starts */
+        int32_t pos = bucket[c];
+        while (pos < (int32_t)n && SA[pos] != EMPTY_SLOT) {
+            pos++;
+        }
+        SA[pos] = n - 1;
+    }
+    
     get_buckets(T, n, K, bucket, 1);  /* Get bucket ends */
     
     for (size_t i = n; i > 0; i--) {
@@ -278,6 +289,17 @@ static void induced_sort_int(const int32_t *T, int32_t *SA, size_t n,
         }
     }
     
+    /* Place n-1 explicitly */
+    {
+        int32_t c = T[n - 1];
+        get_buckets_int(T, n, K, bucket, 0);
+        int32_t pos = bucket[c];
+        while (pos < (int32_t)n && SA[pos] != EMPTY_SLOT) {
+            pos++;
+        }
+        SA[pos] = n - 1;
+    }
+    
     get_buckets_int(T, n, K, bucket, 1);
     
     for (size_t i = n; i > 0; i--) {
@@ -291,21 +313,21 @@ static void induced_sort_int(const int32_t *T, int32_t *SA, size_t n,
 static int lms_equal(const uint8_t *T, size_t n, const uint8_t *t,
                      size_t i, size_t j) {
     if (i == j) return 1;
-    
+
     size_t p = 0;
     while (1) {
         if (T[i + p] != T[j + p]) return 0;
         if (TYPE_BIT(t, i + p) != TYPE_BIT(t, j + p)) return 0;
         p++;
-        
+
+        /* Check for end of string BEFORE accessing T[i + p] and T[j + p] again */
+        if (i + p >= n || j + p >= n) return 0;
+
         int lms_i = IS_LMS(t, i + p);
         int lms_j = IS_LMS(t, j + p);
-        
+
         if (lms_i && lms_j) return 1;  /* Both reached next LMS - equal */
         if (lms_i != lms_j) return 0;   /* One is LMS, other isn't - different */
-        
-        /* Safety check for end of string */
-        if (i + p >= n || j + p >= n) return 0;
     }
 }
 
@@ -326,17 +348,8 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
         return SAIS_ERR_MEMORY;
     }
     
-    /*
-     * Definition:
-     * - Suffix T[i..] is S-type if T[i..] < T[i+1..] (lexicographically)
-     * - Suffix T[i..] is L-type if T[i..] > T[i+1..]
-     * 
-     * Key insight: We can determine this in one right-to-left pass:
-     * - Last suffix is always S-type (by convention)
-     * - T[i..] is S-type if T[i] < T[i+1], or T[i] == T[i+1] and T[i+1..] is S-type
-     * - Otherwise L-type
-     */
-    SET_STYPE(t, n - 1);  /* Last position is S-type */
+    /* ... Type classification ... */
+    SET_STYPE(t, n - 1);
     
     for (size_t i = n - 1; i > 0; i--) {
         if (T[i - 1] < T[i] || (T[i - 1] == T[i] && TYPE_BIT(t, i) == STYPE)) {
@@ -346,52 +359,31 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
         }
     }
     
-    /*
-     * Find and bucket-sort LMS suffixes
-     * 
-     * LMS (Left-Most S-type) suffixes are S-type suffixes whose
-     * predecessor is L-type. These are the "seeds" for induced sorting.
-     */
-    get_buckets(T, n, K, bucket, 1);  /* Get bucket ends */
+    /* ... Bucket LMS ... */
+    get_buckets(T, n, K, bucket, 1);
     
-    /* Initialize SA with empty slots */
-    for (size_t i = 0; i < n; i++) {
-        SA[i] = EMPTY_SLOT;
-    }
+    for (size_t i = 0; i < n; i++) SA[i] = EMPTY_SLOT;
     
-    /* Place LMS suffixes at the end of their buckets */
     for (size_t i = 1; i < n; i++) {
         if (IS_LMS(t, i)) {
             SA[--bucket[T[i]]] = (int32_t)i;
         }
     }
     
-    /* First induced sort - sort LMS substrings */
     induced_sort_byte(T, SA, n, K, t, bucket);
     
-    /*
-     * Compact sorted LMS suffixes and name them
-     * 
-     * We now have LMS substrings sorted. We need to:
-     * 1. Extract just the LMS positions in sorted order
-     * 2. Assign unique names to distinct LMS substrings
-     * 3. Build the "reduced string" S1 of LMS names
-     */
-    
-    /* Count LMS suffixes */
+    /* ... Compact LMS ... */
     size_t n1 = 0;
     for (size_t i = 1; i < n; i++) {
         if (IS_LMS(t, i)) n1++;
     }
-    
+
     if (n1 == 0) {
-        /* No LMS suffixes - edge case */
         free(bucket);
         free(t);
         return SAIS_OK;
     }
     
-    /* Compact LMS suffixes to front of SA */
     size_t j = 0;
     for (size_t i = 0; i < n; i++) {
         if (SA[i] > 0 && IS_LMS(t, SA[i])) {
@@ -399,10 +391,6 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
         }
     }
     
-    /* 
-     * Allocate separate buffer for names to avoid complex in-place indexing.
-     * This uses extra memory but is correct and simpler.
-     */
     int32_t *names = calloc(n, sizeof(int32_t));
     if (!names) {
         free(bucket);
@@ -410,12 +398,8 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
         return SAIS_ERR_MEMORY;
     }
     
-    /* Initialize names array */
-    for (size_t i = 0; i < n; i++) {
-        names[i] = EMPTY_SLOT;
-    }
+    for (size_t i = 0; i < n; i++) names[i] = EMPTY_SLOT;
     
-    /* Assign names to LMS substrings */
     int32_t name = 0;
     int32_t prev = -1;
     
@@ -432,11 +416,9 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
             prev = pos;
         }
         
-        /* Store name at the LMS position */
         names[pos] = name - 1;
     }
     
-    /* Build reduced string S1 in the back of SA */
     int32_t *SA1 = SA + n - n1;
     j = 0;
     for (size_t i = 0; i < n; i++) {
@@ -447,16 +429,7 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
     
     free(names);
     
-    /*
-     * Recursion or direct construction
-     * 
-     * If all LMS names are unique, we can directly construct SA1.
-     * Otherwise, recursively sort the reduced string S1.
-     */
     if ((size_t)name < n1) {
-        /* Not all names unique - need recursive call */
-        
-        /* Allocate type array for reduced string */
         size_t t1_size = (n1 + 7) / 8;
         uint8_t *t1 = calloc(t1_size, 1);
         if (!t1) {
@@ -473,7 +446,6 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
             return SAIS_ERR_MEMORY;
         }
         
-        /* Classify reduced string */
         if (n1 > 0) {
             SET_STYPE(t1, n1 - 1);
             for (size_t i = n1 - 1; i > 0; i--) {
@@ -486,13 +458,10 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
             }
         }
         
-        /* Get bucket ends and place LMS of reduced string */
         get_buckets_int(SA1, n1, name, bucket1, 1);
         
-        int32_t *SA1_work = SA;  /* Use front of SA for recursive work */
-        for (size_t i = 0; i < n1; i++) {
-            SA1_work[i] = EMPTY_SLOT;
-        }
+        int32_t *SA1_work = SA;
+        for (size_t i = 0; i < n1; i++) SA1_work[i] = EMPTY_SLOT;
         
         for (size_t i = 1; i < n1; i++) {
             if (IS_LMS(t1, i)) {
@@ -500,42 +469,23 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
             }
         }
         
-        /* Induced sort on reduced string */
         induced_sort_int(SA1, SA1_work, n1, name, t1, bucket1);
         
-        /* Copy result back */
-        for (size_t i = 0; i < n1; i++) {
-            SA1[i] = SA1_work[i];
-        }
+        for (size_t i = 0; i < n1; i++) SA1[i] = SA1_work[i];
         
         free(bucket1);
         free(t1);
     } else {
-        /* All names unique - directly compute SA1 */
-        for (size_t i = 0; i < n1; i++) {
-            SA[SA1[i]] = (int32_t)i;
-        }
-        for (size_t i = 0; i < n1; i++) {
-            SA1[i] = SA[i];
-        }
+        for (size_t i = 0; i < n1; i++) SA[SA1[i]] = (int32_t)i;
+        for (size_t i = 0; i < n1; i++) SA1[i] = SA[i];
     }
     
-    /*
-     * Induce final SA from sorted LMS suffixes
-     * 
-     * Now SA1 contains the suffix array of the reduced string.
-     * We need to map this back to positions in T and induce the full SA.
-     */
-    
-    /* Get LMS positions in text order - need n1 slots */
     int32_t *LMS_pos = NULL;
     int lms_allocated = 0;
     
     if ((size_t)K >= n1) {
-        /* Reuse bucket array since it's large enough */
         LMS_pos = bucket;
     } else {
-        /* Need separate allocation */
         LMS_pos = malloc(n1 * sizeof(int32_t));
         if (!LMS_pos) {
             free(bucket);
@@ -552,36 +502,24 @@ static int sais_main(const uint8_t *T, int32_t *SA, size_t n, int K) {
         }
     }
     
-    /* Map SA1 indices back to text positions */
-    for (size_t i = 0; i < n1; i++) {
-        SA1[i] = LMS_pos[SA1[i]];
-    }
+    for (size_t i = 0; i < n1; i++) SA1[i] = LMS_pos[SA1[i]];
     
-    if (lms_allocated) {
-        free(LMS_pos);
-    }
+    if (lms_allocated) free(LMS_pos);
     
-    /* Clear SA and place sorted LMS suffixes */
-    for (size_t i = 0; i < n - n1; i++) {
-        SA[i] = EMPTY_SLOT;
-    }
+    for (size_t i = 0; i < n - n1; i++) SA[i] = EMPTY_SLOT;
     
-    /* Recompute bucket ends (bucket array is still valid) */
     get_buckets(T, n, K, bucket, 1);
     
-    /* Place LMS suffixes in reverse order of SA1 */
     for (size_t i = n1; i > 0; i--) {
         int32_t pos = SA1[i - 1];
         SA1[i - 1] = EMPTY_SLOT;
         SA[--bucket[T[pos]]] = pos;
     }
     
-    /* Final induced sort */
     induced_sort_byte(T, SA, n, K, t, bucket);
     
     free(bucket);
     free(t);
-    
     return SAIS_OK;
 }
 

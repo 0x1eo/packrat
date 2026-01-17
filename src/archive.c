@@ -119,6 +119,15 @@ static void get_dirname(const char *path, char *dir) {
     }
 }
 
+/* Safely build a path, returning error code if truncated */
+static int build_path(char *dest, size_t dest_size, const char *dir, const char *file) {
+    size_t needed = snprintf(dest, dest_size, "%s/%s", dir, file);
+    if (needed >= dest_size) {
+        return PRT_ERR_PATH_TOO_LONG;
+    }
+    return PRT_OK;
+}
+
 prt_archive_t* prt_archive_create(const char *path) {
     prt_archive_t *archive = calloc(1, sizeof(prt_archive_t));
     if (!archive) return NULL;
@@ -323,46 +332,57 @@ int prt_archive_add_dir(prt_archive_t *archive, const char *dir_path,
                         const char *base_path) {
     DIR *dir = opendir(dir_path);
     if (!dir) return PRT_ERR_FILE;
-    
+
     struct dirent *entry;
     char full_path[PRT_MAX_PATH * 2];
     char arch_path[PRT_MAX_PATH * 2];
-    
+
     /* Determine base path for archive */
     const char *dir_name = strrchr(dir_path, '/');
     dir_name = dir_name ? dir_name + 1 : dir_path;
-    
+
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
-        
-        if (base_path) {
-            snprintf(arch_path, sizeof(arch_path), "%s/%s", base_path, entry->d_name);
-        } else {
-            snprintf(arch_path, sizeof(arch_path), "%s/%s", dir_name, entry->d_name);
+
+        int result = build_path(full_path, sizeof(full_path), dir_path, entry->d_name);
+        if (result != PRT_OK) {
+            fprintf(stderr, "Error: Path too long: %s/%s\n", dir_path, entry->d_name);
+            closedir(dir);
+            return result;
         }
-        
+
+        if (base_path) {
+            result = build_path(arch_path, sizeof(arch_path), base_path, entry->d_name);
+        } else {
+            result = build_path(arch_path, sizeof(arch_path), dir_name, entry->d_name);
+        }
+        if (result != PRT_OK) {
+            fprintf(stderr, "Error: Archive path too long: %s/%s\n",
+                    base_path ? base_path : dir_name, entry->d_name);
+            closedir(dir);
+            return result;
+        }
+
         struct stat st;
         if (stat(full_path, &st) != 0) continue;
-        
+
         if (S_ISDIR(st.st_mode)) {
-            int result = prt_archive_add_dir(archive, full_path, arch_path);
+            result = prt_archive_add_dir(archive, full_path, arch_path);
             if (result != PRT_OK) {
                 closedir(dir);
                 return result;
             }
         } else if (S_ISREG(st.st_mode)) {
-            int result = prt_archive_add_file(archive, full_path, arch_path);
+            result = prt_archive_add_file(archive, full_path, arch_path);
             if (result != PRT_OK) {
                 closedir(dir);
                 return result;
             }
         }
     }
-    
+
     closedir(dir);
     return PRT_OK;
 }
@@ -482,25 +502,32 @@ int prt_archive_extract_file(prt_archive_t *archive, uint32_t index,
 
 int prt_archive_extract_all(prt_archive_t *archive, const char *output_dir) {
     if (!archive || archive->mode != 0) return PRT_ERR_FILE;
-    
+
     for (uint32_t i = 0; i < archive->file_count; i++) {
         char output_path[PRT_MAX_PATH * 2];
-        
+        int result;
+
         if (output_dir) {
-            snprintf(output_path, sizeof(output_path), "%s/%s", 
-                     output_dir, archive->entries[i].path);
+            result = build_path(output_path, sizeof(output_path),
+                               output_dir, archive->entries[i].path);
+            if (result != PRT_OK) {
+                fprintf(stderr, "Error: Output path too long: %s/%s\n",
+                        output_dir, archive->entries[i].path);
+                return result;
+            }
         } else {
             strncpy(output_path, archive->entries[i].path, sizeof(output_path) - 1);
+            output_path[sizeof(output_path) - 1] = '\0';
         }
-        
+
         printf("  Extracting: %s\n", archive->entries[i].path);
-        
-        int result = prt_archive_extract_file(archive, i, output_path);
+
+        result = prt_archive_extract_file(archive, i, output_path);
         if (result != PRT_OK) {
             return result;
         }
     }
-    
+
     return PRT_OK;
 }
 

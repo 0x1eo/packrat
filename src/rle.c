@@ -47,11 +47,17 @@ int rle_decode(const uint8_t *input, size_t input_size,
     
     while (i < input_size) {
         if (input[i] == RUNA || input[i] == RUNB) {
+            /* Bijective base-2 decoding:
+             * RUNA = digit 1 (value 1 * power)
+             * RUNB = digit 2 (value 2 * power)
+             * Read LSB to MSB, accumulate: sum += digit * power; power *= 2
+             */
             size_t run_length = 0;
             size_t power = 1;
             while (i < input_size && (input[i] == RUNA || input[i] == RUNB)) {
-                run_length += (input[i] == RUNA) ? power : 2 * power;
-                power <<= 1;
+                size_t digit = (input[i] == RUNA) ? 1 : 2;
+                run_length += digit * power;
+                power *= 2;
                 i++;
             }
             if (out_idx + run_length > max_output_size) return -1;

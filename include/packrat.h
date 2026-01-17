@@ -14,6 +14,7 @@
 #define PRT_ERR_FORMAT     -2
 #define PRT_ERR_FILE       -3
 #define PRT_ERR_CORRUPT    -4
+#define PRT_ERR_PATH_TOO_LONG  -11
 
 #define PRT_MAX_FILENAME 128
 

@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <stdatomic.h>
+#include <time.h>
 
 #ifndef PRT_NUM_THREADS
 #define PRT_NUM_THREADS 8
@@ -114,7 +116,7 @@ typedef struct {
     uint32_t file_start;
     uint32_t file_count;
     int result;
-    volatile int done;
+    atomic_int done;
 } block_work_t;
 
 struct prt_solid_archive {
@@ -200,6 +202,15 @@ static void get_dirname(const char *path, char *dir, size_t dir_size) {
     } else {
         dir[0] = '\0';
     }
+}
+
+/* Safely build a path, returning error code if truncated */
+static int build_path_v3(char *dest, size_t dest_size, const char *dir, const char *file) {
+    size_t needed = snprintf(dest, dest_size, "%s/%s", dir, file);
+    if (needed >= dest_size) {
+        return PRT_ERR_PATH_TOO_LONG;
+    }
+    return PRT_OK;
 }
 
 /* Get file extension (lowercase) */
@@ -368,45 +379,56 @@ int prt_solid_archive_add_dir(prt_solid_archive_t *archive,
                                const char *base_path) {
     DIR *dir = opendir(dir_path);
     if (!dir) return PRT_ERR_FILE;
-    
+
     struct dirent *entry;
     char full_path[PRT_MAX_PATH_V3];
     char arch_path[PRT_MAX_PATH_V3];
-    
+
     const char *dir_name = strrchr(dir_path, '/');
     dir_name = dir_name ? dir_name + 1 : dir_path;
-    
+
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
-        
-        if (base_path) {
-            snprintf(arch_path, sizeof(arch_path), "%s/%s", base_path, entry->d_name);
-        } else {
-            snprintf(arch_path, sizeof(arch_path), "%s/%s", dir_name, entry->d_name);
+
+        int result = build_path_v3(full_path, sizeof(full_path), dir_path, entry->d_name);
+        if (result != PRT_OK) {
+            fprintf(stderr, "Error: Path too long: %s/%s\n", dir_path, entry->d_name);
+            closedir(dir);
+            return result;
         }
-        
+
+        if (base_path) {
+            result = build_path_v3(arch_path, sizeof(arch_path), base_path, entry->d_name);
+        } else {
+            result = build_path_v3(arch_path, sizeof(arch_path), dir_name, entry->d_name);
+        }
+        if (result != PRT_OK) {
+            fprintf(stderr, "Error: Archive path too long: %s/%s\n",
+                    base_path ? base_path : dir_name, entry->d_name);
+            closedir(dir);
+            return result;
+        }
+
         struct stat st;
         if (stat(full_path, &st) != 0) continue;
-        
+
         if (S_ISDIR(st.st_mode)) {
-            int result = prt_solid_archive_add_dir(archive, full_path, arch_path);
+            result = prt_solid_archive_add_dir(archive, full_path, arch_path);
             if (result != PRT_OK) {
                 closedir(dir);
                 return result;
             }
         } else if (S_ISREG(st.st_mode)) {
-            int result = prt_solid_archive_add_file(archive, full_path, arch_path);
+            result = prt_solid_archive_add_file(archive, full_path, arch_path);
             if (result != PRT_OK) {
                 closedir(dir);
                 return result;
             }
         }
     }
-    
+
     closedir(dir);
     return PRT_OK;
 }
@@ -459,27 +481,27 @@ typedef struct {
 
 static void* compression_worker(void *arg) {
     thread_arg_t *targ = (thread_arg_t*)arg;
-    
+
     while (1) {
         pthread_mutex_lock(targ->mutex);
         uint32_t idx = (*targ->next_block)++;
         pthread_mutex_unlock(targ->mutex);
-        
+
         if (idx >= targ->block_count) {
             break;
         }
-        
+
         block_work_t *work = &targ->work_items[idx];
-        
+
         work->result = compress_solid_block(
             work->input_data, work->input_size,
             work->method,
             &work->output_data, &work->output_size
         );
-        
-        work->done = 1;
+
+        atomic_store(&work->done, 1);
     }
-    
+
     return NULL;
 }
 
@@ -590,27 +612,53 @@ int prt_solid_archive_finalize(prt_solid_archive_t *archive) {
     for (int t = 0; t < num_threads; t++) {
         pthread_create(&threads[t], NULL, compression_worker, &targ);
     }
-    
+
     uint32_t last_done = 0;
+    time_t start_time = time(NULL);
+    const time_t TIMEOUT_SECONDS = 3600;  /* 1 hour timeout per block */
+
     while (1) {
         uint32_t done_count = 0;
         for (uint32_t b = 0; b < block_count; b++) {
-            if (work_items[b].done) done_count++;
+            if (atomic_load(&work_items[b].done)) done_count++;
         }
-        
+
         if (done_count != last_done) {
             printf("\r  Progress: %u/%u blocks completed", done_count, block_count);
             fflush(stdout);
             last_done = done_count;
+            start_time = time(NULL);  /* Reset timeout on progress */
         }
-        
+
         if (done_count >= block_count) break;
-        
+
+        /* Check for timeout */
+        time_t elapsed = time(NULL) - start_time;
+        if (elapsed > TIMEOUT_SECONDS) {
+            fprintf(stderr, "\nError: Compression timeout - no progress for %ld seconds\n", (long)elapsed);
+            fprintf(stderr, "This may indicate a thread hang or deadlock.\n");
+            /* Cancel threads to clean up */
+            for (int t = 0; t < num_threads; t++) {
+                pthread_cancel(threads[t]);
+            }
+            for (int t = 0; t < num_threads; t++) {
+                pthread_join(threads[t], NULL);
+            }
+            for (uint32_t j = 0; j < block_count; j++) {
+                free(work_items[j].input_data);
+                free(work_items[j].output_data);
+            }
+            free(work_items);
+            free(files);
+            pthread_mutex_destroy(&work_mutex);
+            return PRT_ERR_CORRUPT;
+        }
+
         struct timespec ts = {0, 100000000};
         nanosleep(&ts, NULL);
     }
     printf("\n");
-    
+
     for (int t = 0; t < num_threads; t++) {
         pthread_join(threads[t], NULL);
     }
@@ -618,18 +666,19 @@ int prt_solid_archive_finalize(prt_solid_archive_t *archive) {
     
     for (uint32_t b = 0; b < block_count; b++) {
         block_work_t *work = &work_items[b];
-        
+
         if (work->result != PRT_OK) {
+            int error_result = work->result;  /* Save before freeing */
             for (uint32_t j = 0; j < block_count; j++) {
                 free(work_items[j].input_data);
                 free(work_items[j].output_data);
             }
             free(work_items);
             free(files);
-            return work->result;
+            return error_result;
         }
-        
-        double ratio = work->input_size > 0 ? 
+
+        double ratio = work->input_size > 0 ?
                        100.0 * work->output_size / work->input_size : 0;
         printf("  Block %u: %u files, %lu -> %lu (%.1f%%)\n",
                b + 1, work->file_count,
@@ -908,23 +957,30 @@ int prt_solid_archive_extract_file(prt_solid_archive_t *archive,
 
 int prt_solid_archive_extract_all(prt_solid_archive_t *archive, const char *output_dir) {
     if (!archive || archive->mode != 0) return PRT_ERR_FILE;
-    
+
     for (uint32_t i = 0; i < archive->header.file_count; i++) {
         char output_path[PRT_MAX_PATH_V3 * 2];
-        
+        int result;
+
         if (output_dir) {
-            snprintf(output_path, sizeof(output_path), "%s/%s",
-                     output_dir, archive->file_paths[i]);
+            result = build_path_v3(output_path, sizeof(output_path),
+                                   output_dir, archive->file_paths[i]);
+            if (result != PRT_OK) {
+                fprintf(stderr, "Error: Output path too long: %s/%s\n",
+                        output_dir, archive->file_paths[i]);
+                return result;
+            }
         } else {
             strncpy(output_path, archive->file_paths[i], sizeof(output_path) - 1);
+            output_path[sizeof(output_path) - 1] = '\0';
         }
-        
+
         printf("  Extracting: %s\n", archive->file_paths[i]);
-        
-        int result = prt_solid_archive_extract_file(archive, i, output_path);
+
+        result = prt_solid_archive_extract_file(archive, i, output_path);
         if (result != PRT_OK) return result;
     }
-    
+
     return PRT_OK;
 }
 
@@ -969,7 +1025,7 @@ void prt_solid_archive_list(prt_solid_archive_t *archive) {
         printf("Files:\n");
         printf("  %-50s %12s %6s\n", "Path", "Size", "Block");
         printf("  %-50s %12s %6s\n", "----", "----", "-----");
-        
+
         for (uint32_t i = 0; i < archive->header.file_count; i++) {
             printf("  %-50s %12lu %6u\n",
                    archive->file_paths[i],
@@ -978,9 +1034,4 @@ void prt_solid_archive_list(prt_solid_archive_t *archive) {
         }
         printf("\n");
     }
-    
-    printf("%-40s %12s %12s %6s\n", "----", "--------", "----------", "-----");
-    printf("%-40s %12lu %12lu %5.1f%%\n", "TOTAL",
-           (unsigned long)total_orig, (unsigned long)total_comp,
-           total_orig > 0 ? 100.0 * total_comp / total_orig : 0);
 }

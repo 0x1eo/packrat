@@ -217,19 +217,19 @@ static int cmd_test(const char *input) {
 
 static int cmd_archive_create(const char *archive_path, int file_count, char **files) {
     printf("Creating archive: %s\n", archive_path);
-    
+
     clock_t start = clock();
-    
+
     prt_archive_t *archive = prt_archive_create(archive_path);
     if (!archive) {
         fprintf(stderr, "Error: Cannot create archive\n");
         return 1;
     }
-    
+
     int added = 0;
     for (int i = 0; i < file_count; i++) {
         const char *path = files[i];
-        
+
         if (is_directory(path)) {
             printf("  Adding directory: %s/\n", path);
             int result = prt_archive_add_dir(archive, path, NULL);
@@ -239,7 +239,7 @@ static int cmd_archive_create(const char *archive_path, int file_count, char **f
                 return 1;
             }
         } else {
-            printf("  Adding: %s\n", path);
+            printf("  Adding: %s (%d/%d)\n", path, i + 1, file_count);
             int result = prt_archive_add_file(archive, path, NULL);
             if (result != PRT_OK) {
                 fprintf(stderr, "Error adding %s: %s\n", path, error_string(result));
@@ -249,23 +249,23 @@ static int cmd_archive_create(const char *archive_path, int file_count, char **f
             added++;
         }
     }
-    
+
     int result = prt_archive_finalize(archive);
     if (result != PRT_OK) {
         fprintf(stderr, "Error finalizing archive: %s\n", error_string(result));
         prt_archive_close(archive);
         return 1;
     }
-    
+
     clock_t end = clock();
     double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
-    
+
     uint32_t total_files = prt_archive_file_count(archive);
     long archive_size = get_file_size(archive_path);
-    
+
     printf("\nArchive created: %u files, %ld bytes\n", total_files, archive_size);
     printf("Time: %.3f seconds\n", elapsed);
-    
+
     prt_archive_close(archive);
     return 0;
 }

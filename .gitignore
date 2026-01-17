@@ -1,7 +1,6 @@
 # Build artifacts
 obj/
 packrat
-test_sais
 
 # Test files
 /tmp/packrat_*

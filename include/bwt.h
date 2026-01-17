@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define BWT_BLOCK_THRESHOLD_SAIS  (1UL << 30)
+#define BWT_BLOCK_THRESHOLD_SAIS  (1 << 20)  /* 1MB threshold - use SAIS for better performance */
 #define BWT_BLOCK_32MB            (32 << 20)
 
 typedef enum {
