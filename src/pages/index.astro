@@ -1,0 +1,221 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+	</head>
+	<body>
+		<Header />
+		<main>
+			<section class="hero">
+				<h1>packrat</h1>
+				<p class="subtitle">A Block-Sorting Lossless Data Compression Tool</p>
+				<p class="tagline">
+					Implements the Burrows-Wheeler Transform pipeline with SA-IS suffix array construction
+					for efficient compression of text and source code.
+				</p>
+				<div class="cta-buttons">
+					<a href="/packrat/docs/" class="btn primary">Read Documentation</a>
+					<a href="https://github.com/0x1eo/packrat" class="btn secondary">View Source</a>
+				</div>
+			</section>
+
+			<section class="abstract">
+				<h2>Abstract</h2>
+				<p>
+					<strong>packrat</strong> is a compression tool that implements the BWT-MTF-RLE-Huffman 
+					pipeline, achieving compression ratios of 10–20% on typical source code. The tool 
+					employs the SA-IS (Suffix Array by Induced Sorting) algorithm for linear-time 
+					suffix array construction, enabling efficient processing of large inputs.
+				</p>
+				<p>
+					A key feature is <em>solid archive</em> support, which groups files by type before 
+					compression to exploit cross-file redundancy patterns common in software projects.
+				</p>
+			</section>
+
+			<section class="features">
+				<h2>Key Features</h2>
+				<div class="feature-grid">
+					<div class="feature">
+						<h3>BWT Pipeline</h3>
+						<p>Uses Burrows-Wheeler Transform, Move-to-Front, Run-Length Encoding, and Canonical Huffman coding-the same approach as bzip2.</p>
+					</div>
+					<div class="feature">
+						<h3>Solid Archives</h3>
+						<p>Groups files by extension (C, Python, JavaScript, etc.) and compresses them together to exploit cross-file redundancy.</p>
+					</div>
+					<div class="feature">
+						<h3>SA-IS Algorithm</h3>
+						<p>Implements the Suffix Array by Induced Sorting algorithm for O(n) suffix array construction on large inputs.</p>
+					</div>
+					<div class="feature">
+						<h3>Simple Interface</h3>
+						<p>Command-line tool with straightforward flags for compression, decompression, archiving, and extraction.</p>
+					</div>
+				</div>
+			</section>
+
+			<section class="usage">
+				<h2>Usage</h2>
+				<pre><code># Build from source
+make
+
+# Compress a single file
+./packrat -c input.txt output.prt
+
+# Decompress
+./packrat -d output.prt restored.txt
+
+# Create a solid archive of a directory
+./packrat -a --solid archive.prt src/
+
+# Extract archive contents
+./packrat -x archive.prt dest/</code></pre>
+			</section>
+		</main>
+		<Footer />
+	</body>
+</html>
+
+<style>
+	.hero {
+		text-align: center;
+		padding: 4em 0 2em;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		margin-bottom: 3em;
+	}
+
+	.hero h1 {
+		font-size: 3.5em;
+		margin-bottom: 0.25em;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+
+	.subtitle {
+		font-size: 1.4em;
+		color: var(--accent);
+		margin: 0 0 1em;
+		font-weight: 500;
+	}
+
+	.tagline {
+		font-size: 1.1em;
+		max-width: 650px;
+		margin: 0 auto 2em;
+		color: var(--text-secondary);
+		line-height: 1.6;
+	}
+
+	.cta-buttons {
+		display: flex;
+		gap: 1em;
+		justify-content: center;
+		flex-wrap: wrap;
+	}
+
+	.btn {
+		padding: 0.75em 2em;
+		border-radius: 4px;
+		font-weight: 500;
+		text-decoration: none;
+		transition: all 0.2s ease;
+		font-size: 0.95em;
+	}
+
+	.btn.primary {
+		background: var(--accent);
+		color: #000;
+	}
+
+	.btn.primary:hover {
+		background: var(--accent-dark);
+	}
+
+	.btn.secondary {
+		background: transparent;
+		color: var(--text-primary);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+	}
+
+	.btn.secondary:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.abstract {
+		max-width: 700px;
+		margin: 0 auto 3em;
+	}
+
+	.abstract h2 {
+		font-size: 1.5em;
+		margin-bottom: 1em;
+		border-bottom: none;
+	}
+
+	.abstract p {
+		text-align: justify;
+		line-height: 1.8;
+	}
+
+	.features h2 {
+		text-align: center;
+		margin-bottom: 1.5em;
+	}
+
+	.feature-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 1.5em;
+	}
+
+	.feature {
+		background: var(--bg-card);
+		padding: 1.5em;
+		border-radius: 4px;
+		border: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.feature h3 {
+		font-size: 1.1em;
+		margin-bottom: 0.5em;
+		color: var(--text-primary);
+	}
+
+	.feature p {
+		margin: 0;
+		font-size: 0.95em;
+		line-height: 1.6;
+	}
+
+	.usage {
+		margin-top: 3em;
+	}
+
+	.usage h2 {
+		text-align: center;
+		margin-bottom: 1em;
+	}
+
+	.usage pre {
+		max-width: 550px;
+		margin: 0 auto;
+	}
+
+	@media (max-width: 720px) {
+		.feature-grid {
+			grid-template-columns: 1fr;
+		}
+		.hero h1 {
+			font-size: 2.5em;
+		}
+	}
+</style>
